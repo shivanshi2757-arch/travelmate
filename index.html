@@ -477,6 +477,39 @@
       </div>
     </section>
 
+    <!-- Cute Edit Trip Modal -->
+    <div id="editTripModal" class="cute-modal" style="display: none;">
+      <div class="cute-modal-backdrop" onclick="closeEditModal()"></div>
+      <div class="cute-modal-card paper-card">
+        <div class="washi-tape tape-top-center"></div>
+        <div class="pin purple-pin"></div>
+        <h3 style="font-family: var(--font-heading); font-size: 1.4rem; color: #431407;">✏️ Edit Trip Details</h3>
+        <form id="editTripForm" onsubmit="handleSaveTripEdit(event)">
+          <input type="hidden" id="editTripId">
+          <div class="form-group" style="margin-top: 1rem;">
+            <label for="editDestInput">📍 Destination</label>
+            <input type="text" id="editDestInput" required>
+          </div>
+          <div class="form-group" style="margin-top: 0.8rem;">
+            <label for="editDatesInput">📅 Dates</label>
+            <input type="text" id="editDatesInput" required>
+          </div>
+          <div class="form-group" style="margin-top: 0.8rem;">
+            <label for="editBudgetInput">💰 Budget</label>
+            <input type="number" id="editBudgetInput" required>
+          </div>
+          <div class="form-group" style="margin-top: 0.8rem;">
+            <label for="editTravellersInput">👥 Travellers</label>
+            <input type="number" id="editTravellersInput" min="1" max="50" required>
+          </div>
+          <div class="form-actions" style="margin-top: 1.5rem; justify-content: flex-end;">
+            <button type="button" class="btn btn-outline" onclick="closeEditModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Changes ✨</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
   </main>
 
   <!-- SCRAPBOOK FOOTER -->
@@ -519,6 +552,7 @@
   </footer>
 
   <script src="db.js"></script>
+  <script src="api.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

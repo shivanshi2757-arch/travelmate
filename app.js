@@ -521,7 +521,31 @@ function handleTripPlanSubmit(event) {
   // Add to My Trips
   APP_STATE.myTrips.unshift(newTripRecord);
 
-  // Persist to Database
+  // Persist to Backend API & Database
+  if (window.API) {
+    API.createTrip({
+      id: newTripRecord.id,
+      destination: newTripRecord.destination,
+      dates: newTripRecord.dates,
+      budget: budget,
+      currency: currency,
+      travellers: travelCount,
+      preferences: newTripRecord.preferences,
+      itinerary: newDays.map(d => ({
+        day: d.dayNumber,
+        city: d.city,
+        hotel: d.hotel,
+        activities: {
+          theme: d.theme,
+          morning: d.morning,
+          afternoon: d.afternoon,
+          evening: d.evening
+        }
+      }))
+    });
+  }
+
+  // Also sync to local DB fallback
   if (window.DB && DB.db) {
     DB.put('trips', newTripRecord);
     newDays.forEach(d => {
@@ -615,6 +639,9 @@ function togglePackingItem(id) {
   if (item) {
     item.checked = !item.checked;
     renderPackingList();
+    if (window.API) {
+      API.togglePacking(item.id, item.checked);
+    }
     if (window.DB && DB.db) {
       DB.put('packing', {
         id: item.id,
@@ -641,13 +668,23 @@ function addPackingItem() {
   }
 
   const newItem = {
-    id: Date.now(),
+    id: `pack-${Date.now()}`,
     text: text,
     category: catSelect.value,
     checked: false
   };
 
   APP_STATE.packingList.push(newItem);
+
+  if (window.API) {
+    API.addPacking({
+      id: newItem.id,
+      trip_id: APP_STATE.currentTrip.id || 'trip-1',
+      item_text: newItem.text,
+      category: newItem.category,
+      is_checked: 0
+    });
+  }
 
   if (window.DB && DB.db) {
     DB.put('packing', {
@@ -666,6 +703,9 @@ function addPackingItem() {
 
 function deletePackingItem(id) {
   APP_STATE.packingList = APP_STATE.packingList.filter(i => i.id !== id);
+  if (window.API) {
+    API.deletePacking(id);
+  }
   if (window.DB && DB.db) {
     DB.delete('packing', id);
   }
@@ -734,7 +774,7 @@ function handleAddExpense(event) {
   if (!title || amount <= 0) return;
 
   const newExpense = {
-    id: Date.now(),
+    id: `budget-${Date.now()}`,
     tripId: APP_STATE.currentTrip.id || 'trip-1',
     title,
     amount,
@@ -742,6 +782,16 @@ function handleAddExpense(event) {
   };
 
   APP_STATE.expenses.unshift(newExpense);
+
+  if (window.API) {
+    API.addBudget({
+      id: newExpense.id,
+      trip_id: newExpense.tripId,
+      category: newExpense.category,
+      amount: newExpense.amount,
+      title: newExpense.title
+    });
+  }
 
   if (window.DB && DB.db) {
     DB.put('budget', newExpense);
@@ -755,6 +805,9 @@ function handleAddExpense(event) {
 function resetExpenses() {
   if (confirm('Reset all logged expenses?')) {
     APP_STATE.expenses = [];
+    if (window.API) {
+      API.clearBudget(APP_STATE.currentTrip.id || 'trip-1');
+    }
     if (window.DB && DB.db) {
       DB.clear('budget');
     }
