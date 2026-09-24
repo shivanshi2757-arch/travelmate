@@ -496,20 +496,46 @@ function handleTripPlanSubmit(event) {
   APP_STATE.itinerary = newDays;
   APP_STATE.activeDayIndex = 0;
 
-  // Add to My Trips
-  APP_STATE.myTrips.unshift({
+  const newTripRecord = {
     id: APP_STATE.currentTrip.id,
     title: `${destination.split(',')[0]} Getaway`,
     destination: destination,
     dates: `${departDate} - ${returnDate}`,
     duration: `${numDays} Days`,
     budget: `${currency}${budget.toLocaleString()}`,
+    currency: currency,
+    totalBudget: budget,
     party: `${travelParty.split(' ')[0]} (${travelCount})`,
+    travelParty: travelParty,
+    travelCount: travelCount,
+    travellers: travelCount,
     style: travelStyle,
+    travelStyle: travelStyle,
+    hotel: `${accomPreference} Retreat`,
+    preferences: { pace, style: travelStyle, accommodation: accomPreference },
     status: 'Upcoming',
     photo: 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=600&q=80',
     note: `Planned for ${travelCount} travellers in ${travelStyle.toLowerCase()} style.`
-  });
+  };
+
+  // Add to My Trips
+  APP_STATE.myTrips.unshift(newTripRecord);
+
+  // Persist to Database
+  if (window.DB && DB.db) {
+    DB.put('trips', newTripRecord);
+    newDays.forEach(d => {
+      DB.put('itinerary', {
+        id: `${newTripRecord.id}-day-${d.dayNumber}`,
+        tripId: newTripRecord.id,
+        day: d.dayNumber,
+        city: d.city,
+        hotel: d.hotel,
+        theme: d.theme,
+        activities: { morning: d.morning, afternoon: d.afternoon, evening: d.evening }
+      });
+    });
+  }
 
   // Re-render
   renderItinerary();
@@ -589,6 +615,15 @@ function togglePackingItem(id) {
   if (item) {
     item.checked = !item.checked;
     renderPackingList();
+    if (window.DB && DB.db) {
+      DB.put('packing', {
+        id: item.id,
+        tripId: APP_STATE.currentTrip.id || 'trip-1',
+        item_text: item.text,
+        category: item.category,
+        is_checked: item.checked ? 1 : 0
+      });
+    }
     if (item.checked) {
       showToast(`Packed: ${item.text} 🧳`);
     }
@@ -605,12 +640,24 @@ function addPackingItem() {
     return;
   }
 
-  APP_STATE.packingList.push({
+  const newItem = {
     id: Date.now(),
     text: text,
     category: catSelect.value,
     checked: false
-  });
+  };
+
+  APP_STATE.packingList.push(newItem);
+
+  if (window.DB && DB.db) {
+    DB.put('packing', {
+      id: newItem.id,
+      tripId: APP_STATE.currentTrip.id || 'trip-1',
+      item_text: newItem.text,
+      category: newItem.category,
+      is_checked: 0
+    });
+  }
 
   input.value = '';
   renderPackingList();
@@ -619,6 +666,9 @@ function addPackingItem() {
 
 function deletePackingItem(id) {
   APP_STATE.packingList = APP_STATE.packingList.filter(i => i.id !== id);
+  if (window.DB && DB.db) {
+    DB.delete('packing', id);
+  }
   renderPackingList();
   showToast('Item removed 🗑️');
 }
@@ -683,12 +733,19 @@ function handleAddExpense(event) {
 
   if (!title || amount <= 0) return;
 
-  APP_STATE.expenses.unshift({
+  const newExpense = {
     id: Date.now(),
+    tripId: APP_STATE.currentTrip.id || 'trip-1',
     title,
     amount,
     category
-  });
+  };
+
+  APP_STATE.expenses.unshift(newExpense);
+
+  if (window.DB && DB.db) {
+    DB.put('budget', newExpense);
+  }
 
   document.getElementById('expenseForm').reset();
   updateBudgetDisplay();
@@ -698,6 +755,9 @@ function handleAddExpense(event) {
 function resetExpenses() {
   if (confirm('Reset all logged expenses?')) {
     APP_STATE.expenses = [];
+    if (window.DB && DB.db) {
+      DB.clear('budget');
+    }
     updateBudgetDisplay();
     showToast('Expenses cleared! 👛');
   }
@@ -743,16 +803,40 @@ function loadTripIntoItinerary(tripId) {
   const trip = APP_STATE.myTrips.find(t => t.id === tripId);
   if (!trip) return;
 
+  APP_STATE.currentTrip.id = trip.id;
   APP_STATE.currentTrip.destination = trip.destination;
   APP_STATE.currentTrip.travelStyle = trip.style || 'Cultural & Romantic';
-  APP_STATE.currentTrip.hotel = 'Charming Local Stay';
-  renderItinerary();
+  APP_STATE.currentTrip.hotel = trip.hotel || 'Charming Local Stay';
+  
+  if (window.DB && DB.db) {
+    DB.getByIndex('itinerary', 'tripId', trip.id).then(itinItems => {
+      if (itinItems && itinItems.length > 0) {
+        APP_STATE.itinerary = itinItems.sort((a,b) => a.day - b.day).map(item => ({
+          dayNumber: item.day,
+          city: item.city,
+          hotel: item.hotel,
+          theme: item.theme,
+          morning: item.activities.morning,
+          afternoon: item.activities.afternoon,
+          evening: item.activities.evening
+        }));
+        APP_STATE.activeDayIndex = 0;
+      }
+      renderItinerary();
+    });
+  } else {
+    renderItinerary();
+  }
+
   showToast(`Loaded ${trip.title} into your Itinerary! 📖`);
   navigate('itinerary');
 }
 
 function deleteTrip(tripId) {
   APP_STATE.myTrips = APP_STATE.myTrips.filter(t => t.id !== tripId);
+  if (window.DB && DB.db) {
+    DB.delete('trips', tripId);
+  }
   renderMyTrips();
   showToast('Trip removed from collection! 🗑️');
 }
@@ -805,7 +889,7 @@ function quickPlanDestination(destName) {
 // 9. INITIALIZATION
 // ==========================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Set default dates in form (today + 14 days, duration 5 days)
   const today = new Date();
   const depart = new Date(today);
@@ -818,6 +902,92 @@ document.addEventListener('DOMContentLoaded', () => {
   const returnInput = document.getElementById('returnDate');
   if (departInput) departInput.value = formatDate(depart);
   if (returnInput) returnInput.value = formatDate(ret);
+
+  // Initialize DB & load persistent data
+  if (window.DB) {
+    try {
+      await DB.init();
+      
+      const storedTrips = await DB.getAll('trips');
+      if (storedTrips && storedTrips.length > 0) {
+        APP_STATE.myTrips = storedTrips;
+        APP_STATE.currentTrip = storedTrips[0];
+      } else {
+        // Seed initial trips to DB
+        for (const t of APP_STATE.myTrips) {
+          await DB.put('trips', t);
+        }
+      }
+
+      // Load itinerary for active trip
+      const storedItin = await DB.getByIndex('itinerary', 'tripId', APP_STATE.currentTrip.id);
+      if (storedItin && storedItin.length > 0) {
+        APP_STATE.itinerary = storedItin.sort((a,b) => a.day - b.day).map(item => ({
+          dayNumber: item.day,
+          city: item.city,
+          hotel: item.hotel,
+          theme: item.theme,
+          morning: item.activities.morning,
+          afternoon: item.activities.afternoon,
+          evening: item.activities.evening
+        }));
+      } else {
+        // Seed initial itinerary
+        for (const d of APP_STATE.itinerary) {
+          await DB.put('itinerary', {
+            id: `${APP_STATE.currentTrip.id}-day-${d.dayNumber}`,
+            tripId: APP_STATE.currentTrip.id,
+            day: d.dayNumber,
+            city: d.city,
+            hotel: d.hotel,
+            theme: d.theme,
+            activities: { morning: d.morning, afternoon: d.afternoon, evening: d.evening }
+          });
+        }
+      }
+
+      // Load packing items for active trip
+      const storedPacking = await DB.getAll('packing');
+      if (storedPacking && storedPacking.length > 0) {
+        APP_STATE.packingList = storedPacking.map(p => ({
+          id: p.id,
+          text: p.item_text,
+          category: p.category,
+          checked: Boolean(p.is_checked)
+        }));
+      } else {
+        // Seed initial packing items
+        for (const p of APP_STATE.packingList) {
+          await DB.put('packing', {
+            id: p.id,
+            tripId: APP_STATE.currentTrip.id,
+            item_text: p.text,
+            category: p.category,
+            is_checked: p.checked ? 1 : 0
+          });
+        }
+      }
+
+      // Load budget expenses
+      const storedBudget = await DB.getAll('budget');
+      if (storedBudget && storedBudget.length > 0) {
+        APP_STATE.expenses = storedBudget;
+      } else {
+        // Seed initial budget
+        for (const b of APP_STATE.expenses) {
+          await DB.put('budget', {
+            id: b.id,
+            tripId: APP_STATE.currentTrip.id,
+            title: b.title,
+            amount: b.amount,
+            category: b.category
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Persistent DB init warning, falling back to local state:', err);
+    }
+  }
 
   // Initial renders
   renderItinerary();
